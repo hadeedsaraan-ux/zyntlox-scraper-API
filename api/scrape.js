@@ -18,18 +18,27 @@ module.exports = async function (req, res) {
         });
 
         const page = await browser.newPage();
-        await page.goto(url, { waitUntil: 'load', timeout: 60000 });
+        await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
 
-        // Screenshot
+        // UNIVERSAL CLEANUP: 
+        // Har wo cheez jo fixed hai ya z-index mein hai (Popups/Banners) usse remove karo
+        await page.evaluate(() => {
+            const elements = document.querySelectorAll('*');
+            elements.forEach(el => {
+                const style = window.getComputedStyle(el);
+                if (style.position === 'fixed' || style.position === 'sticky' || parseInt(style.zIndex) > 100) {
+                    el.remove();
+                }
+            });
+        });
+
         const screenshot = await page.screenshot({ fullPage: true, encoding: 'base64' });
-
-        // HTML content
         const html = await page.content();
         const $ = cheerio.load(html);
         
-        // Metadata & Content
-        const title = $('title').text() || 'No Title';
-        const description = $('meta[name="description"]').attr('content') || '';
+        // Metadata: Meta tags se extract karo
+        const title = $('title').text() || $('meta[property="og:title"]').attr('content') || '';
+        const description = $('meta[name="description"]').attr('content') || $('meta[property="og:description"]').attr('content') || '';
 
         let response = { 
             url, 
@@ -39,7 +48,7 @@ module.exports = async function (req, res) {
         };
 
         if (mode === 'rag') {
-            $('script, style, nav, footer, header, .cookie-banner').remove();
+            $('script, style, nav, footer, header, svg, iframe').remove();
             response.clean_markdown = turndownService.turndown($.html());
         }
 
