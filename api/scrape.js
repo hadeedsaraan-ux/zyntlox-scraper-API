@@ -4,7 +4,7 @@ const cheerio = require('cheerio');
 const TurndownService = require('turndown');
 
 puppeteer.use(StealthPlugin());
-const turndownService = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced' });
+const turndownService = new TurndownService();
 
 module.exports = async function (req, res) {
     const { url, mode } = req.query;
@@ -14,43 +14,37 @@ module.exports = async function (req, res) {
     try {
         browser = await puppeteer.launch({
             headless: 'new',
-            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--window-size=1280,800']
+            args: ['--no-sandbox', '--disable-setuid-sandbox']
         });
 
         const page = await browser.newPage();
-        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
-        await page.setViewport({ width: 1280, height: 800 });
+        await page.goto(url, { waitUntil: 'load', timeout: 60000 });
 
-        // Go to URL
-        await page.goto(url, { waitUntil: 'networkidle0', timeout: 60000 });
-
-        // Clean-up: Remove banners/popups before screenshot
-        await page.evaluate(() => {
-            const selectors = ['#cookie-consent', '.cookie-banner', '[id*="cookie"]', '[class*="banner"]', '[id*="modal"]'];
-            selectors.forEach(s => {
-                document.querySelectorAll(s).forEach(el => el.remove());
-            });
-        });
-
-        // Screenshot logic
+        // Screenshot
         const screenshot = await page.screenshot({ fullPage: true, encoding: 'base64' });
 
-        // Get HTML for Markdown
-        const rawHtml = await page.content();
-        const $ = cheerio.load(rawHtml);
+        // HTML content
+        const html = await page.content();
+        const $ = cheerio.load(html);
         
-        let responseData = { url, status: 'success', screenshot: `data:image/png;base64,${screenshot}` };
+        // Metadata & Content
+        const title = $('title').text() || 'No Title';
+        const description = $('meta[name="description"]').attr('content') || '';
 
-        // RAG/Markdown processing
+        let response = { 
+            url, 
+            status: 'success', 
+            screenshot: `data:image/png;base64,${screenshot}`,
+            metadata: { title, description }
+        };
+
         if (mode === 'rag') {
-            $('nav, footer, header, script, style, iframe, noscript, form, svg, .cookie-banner').remove();
-            responseData.clean_markdown = turndownService.turndown($.html()).substring(0, 15000);
-        } else {
-            responseData.title = $('title').text();
+            $('script, style, nav, footer, header, .cookie-banner').remove();
+            response.clean_markdown = turndownService.turndown($.html());
         }
 
         await browser.close();
-        return res.status(200).json(responseData);
+        return res.status(200).json(response);
 
     } catch (error) {
         if (browser) await browser.close();
