@@ -1,15 +1,16 @@
 {
   "name": "zyntlox-scraper-api",
   "version": "1.0.0",
-  "description": "Standalone Scraper and Screenshot API for Zyntlox",
+  "description": "Premium AI-Ready Scraper API",
   "main": "api/scrape.js",
   "scripts": {
     "start": "node api/scrape.js"
   },
   "dependencies": {
-    "@sparticuz/chromium": "141.0.0",
-    "puppeteer-core": "24.0.0",
-    "cheerio": "^1.0.0-rc.12",
+    "puppeteer": "^22.0.0",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "cheerio": "1.0.0-rc.12",
     "turndown": "^7.1.3"
   }
 }
