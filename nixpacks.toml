@@ -1,2 +1,0 @@
-[phases.setup]
-nixPkgs = ["chromium", "nss", "nspr", "atk", "at-spi2-atk", "cups", "libdrm", "libxkbcommon", "libxcomposite", "libxdamage", "libxrandr", "mesa", "alsa-lib"]
