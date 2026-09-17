@@ -1,9 +1,24 @@
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+const { ProxyPlugin } = require('puppeteer-extra-plugin-proxy');
 const cheerio = require('cheerio');
 const TurndownService = require('turndown');
 
 puppeteer.use(StealthPlugin());
+
+// Proxy Configuration (Reads from Railway Variables)
+if (process.env.PROXY_ADDRESS && process.env.PROXY_USER && process.env.PROXY_PASS) {
+    puppeteer.use(
+        ProxyPlugin({
+            address: process.env.PROXY_ADDRESS,
+            credentials: {
+                username: process.env.PROXY_USER,
+                password: process.env.PROXY_PASS
+            }
+        })
+    );
+}
+
 const turndownService = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced' });
 
 module.exports = async function (req, res) {
@@ -14,7 +29,7 @@ module.exports = async function (req, res) {
     try {
         browser = await puppeteer.launch({
             headless: 'new',
-            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled', '--window-size=1280,800']
+            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--window-size=1280,800']
         });
 
         const page = await browser.newPage();
@@ -35,7 +50,6 @@ module.exports = async function (req, res) {
         const html = await page.content();
         const $ = cheerio.load(html);
         
-        // Full Metadata Extraction
         const metadata = {
             title: $('title').text() || $('meta[property="og:title"]').attr('content') || '',
             description: $('meta[name="description"]').attr('content') || '',
