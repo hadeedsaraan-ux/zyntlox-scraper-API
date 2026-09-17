@@ -7,8 +7,8 @@ puppeteer.use(StealthPlugin());
 const turndownService = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced' });
 
 module.exports = async function (req, res) {
-    const { url, mode } = req.query;
-    if (!url) return res.status(400).json({ error: 'URL is required' });
+    const { url } = req.query;
+    if (!url) return res.status(400).json({ error: 'Please provide a "url" query parameter.' });
 
     let browser = null;
     try {
@@ -42,7 +42,7 @@ module.exports = async function (req, res) {
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
         await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
 
-        // Kill Popups & Banners
+        // Kill Popups, Banners & Noise
         await page.evaluate(() => {
             document.querySelectorAll('*').forEach(el => {
                 const style = window.getComputedStyle(el);
@@ -52,11 +52,11 @@ module.exports = async function (req, res) {
             });
         });
 
-        // FIXED: Removed fullPage: true to prevent memory crash on cloud servers
         const screenshot = await page.screenshot({ encoding: 'base64' });
         const html = await page.content();
         const $ = cheerio.load(html);
 
+        // Extract Structured Metadata for AI Context
         const metadata = {
             title: $('title').text() || $('meta[property="og:title"]').attr('content') || '',
             description: $('meta[name="description"]').attr('content') || '',
@@ -64,34 +64,29 @@ module.exports = async function (req, res) {
                 h1: $('h1').map((i, el) => $(el).text().trim()).get(),
                 h2: $('h2').map((i, el) => $(el).text().trim()).get()
             },
-            links: $('a[href]').map((i, el) => ({
-                text: $(el).text().trim(),
-                href: $(el).attr('href')
-            })).get().slice(0, 50),
-            images: $('img').map((i, el) => ({
-                src: $('img').attr('src'),
-                alt: $('img').attr('alt') || ''
-            })).get().slice(0, 20),
+            linksCount: $('a[href]').length,
+            imagesCount: $('img').length,
             canonical: $('link[rel="canonical"]').attr('href') || ''
         };
 
-        let response = {
-            url,
-            status: 'success',
-            screenshot: `data:image/png;base64,${screenshot}`,
-            metadata
-        };
-
-        if (mode === 'rag') {
-            $('script, style, nav, footer, header, svg, iframe').remove();
-            response.clean_markdown = turndownService.turndown($.html()).substring(0, 15000);
-        }
+        // Heavy Noise Cancellation for AI (RAG Ready by Default)
+        $('script, style, nav, footer, header, svg, iframe, noscript, form, .cookie-banner, #cookie-consent').remove();
+        
+        const cleanMarkdown = turndownService.turndown($.html()).substring(0, 25000);
 
         await browser.close();
-        return res.status(200).json(response);
+
+        // Developer-First Clean Response Structure
+        return res.status(200).json({
+            success: true,
+            source_url: url,
+            metadata: metadata,
+            markdown_content: cleanMarkdown,
+            screenshot: `data:image/png;base64,${screenshot}`
+        });
 
     } catch (error) {
         if (browser) await browser.close();
-        return res.status(500).json({ error: error.message });
+        return res.status(500).json({ success: false, error: error.message });
     }
 };
