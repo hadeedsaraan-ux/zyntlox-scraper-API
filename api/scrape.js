@@ -1,24 +1,9 @@
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
-const { ProxyPlugin } = require('puppeteer-extra-plugin-proxy');
 const cheerio = require('cheerio');
 const TurndownService = require('turndown');
 
 puppeteer.use(StealthPlugin());
-
-// Proxy Configuration (Reads from Railway Variables)
-if (process.env.PROXY_ADDRESS && process.env.PROXY_USER && process.env.PROXY_PASS) {
-    puppeteer.use(
-        ProxyPlugin({
-            address: process.env.PROXY_ADDRESS,
-            credentials: {
-                username: process.env.PROXY_USER,
-                password: process.env.PROXY_PASS
-            }
-        })
-    );
-}
-
 const turndownService = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced' });
 
 module.exports = async function (req, res) {
@@ -27,16 +12,38 @@ module.exports = async function (req, res) {
 
     let browser = null;
     try {
+        const launchArgs = [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-blink-features=AutomationControlled',
+            '--window-size=1280,800'
+        ];
+
+        // Agar Railway variables mein proxy di ho toh directly apply hogi
+        if (process.env.PROXY_ADDRESS) {
+            launchArgs.push(`--proxy-server=${process.env.PROXY_ADDRESS}`);
+        }
+
         browser = await puppeteer.launch({
             headless: 'new',
-            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--window-size=1280,800']
+            args: launchArgs
         });
 
         const page = await browser.newPage();
+
+        // Proxy authentication agar username aur password diye hon
+        if (process.env.PROXY_USER && process.env.PROXY_PASS) {
+            await page.authenticate({
+                username: process.env.PROXY_USER,
+                password: process.env.PROXY_PASS
+            });
+        }
+
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
         await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
 
-        // Clean-up: Kill all fixed/sticky popups and banners
+        // Kill Popups & Banners
         await page.evaluate(() => {
             document.querySelectorAll('*').forEach(el => {
                 const style = window.getComputedStyle(el);
@@ -49,7 +56,7 @@ module.exports = async function (req, res) {
         const screenshot = await page.screenshot({ fullPage: true, encoding: 'base64' });
         const html = await page.content();
         const $ = cheerio.load(html);
-        
+
         const metadata = {
             title: $('title').text() || $('meta[property="og:title"]').attr('content') || '',
             description: $('meta[name="description"]').attr('content') || '',
@@ -68,7 +75,12 @@ module.exports = async function (req, res) {
             canonical: $('link[rel="canonical"]').attr('href') || ''
         };
 
-        let response = { url, status: 'success', screenshot: `data:image/png;base64,${screenshot}`, metadata };
+        let response = {
+            url,
+            status: 'success',
+            screenshot: `data:image/png;base64,${screenshot}`,
+            metadata
+        };
 
         if (mode === 'rag') {
             $('script, style, nav, footer, header, svg, iframe').remove();
