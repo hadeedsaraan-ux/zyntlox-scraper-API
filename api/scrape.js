@@ -20,7 +20,6 @@ module.exports = async function (req, res) {
             '--window-size=1280,800'
         ];
 
-        // Agar Railway variables mein proxy di ho toh directly apply hogi
         if (process.env.PROXY_ADDRESS) {
             launchArgs.push(`--proxy-server=${process.env.PROXY_ADDRESS}`);
         }
@@ -31,8 +30,8 @@ module.exports = async function (req, res) {
         });
 
         const page = await browser.newPage();
+        await page.setViewport({ width: 1280, height: 800 });
 
-        // Proxy authentication agar username aur password diye hon
         if (process.env.PROXY_USER && process.env.PROXY_PASS) {
             await page.authenticate({
                 username: process.env.PROXY_USER,
@@ -53,7 +52,8 @@ module.exports = async function (req, res) {
             });
         });
 
-        const screenshot = await page.screenshot({ fullPage: true, encoding: 'base64' });
+        // FIXED: Removed fullPage: true to prevent memory crash on cloud servers
+        const screenshot = await page.screenshot({ encoding: 'base64' });
         const html = await page.content();
         const $ = cheerio.load(html);
 
@@ -69,8 +69,8 @@ module.exports = async function (req, res) {
                 href: $(el).attr('href')
             })).get().slice(0, 50),
             images: $('img').map((i, el) => ({
-                src: $(el).attr('src'),
-                alt: $(el).attr('alt') || ''
+                src: $('img').attr('src'),
+                alt: $('img').attr('alt') || ''
             })).get().slice(0, 20),
             canonical: $('link[rel="canonical"]').attr('href') || ''
         };
