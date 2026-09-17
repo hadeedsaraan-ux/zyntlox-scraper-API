@@ -14,17 +14,16 @@ module.exports = async function (req, res) {
     try {
         browser = await puppeteer.launch({
             headless: 'new',
-            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled']
+            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled', '--window-size=1280,800']
         });
 
         const page = await browser.newPage();
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
         await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
 
-        // Kill Popups & Banners
+        // Clean-up: Kill all fixed/sticky popups and banners
         await page.evaluate(() => {
-            const badElements = document.querySelectorAll('*');
-            badElements.forEach(el => {
+            document.querySelectorAll('*').forEach(el => {
                 const style = window.getComputedStyle(el);
                 if (style.position === 'fixed' || style.position === 'sticky' || parseInt(style.zIndex) > 90) {
                     el.remove();
@@ -36,7 +35,7 @@ module.exports = async function (req, res) {
         const html = await page.content();
         const $ = cheerio.load(html);
         
-        // Advanced Metadata (The Value that developers pay for)
+        // Full Metadata Extraction
         const metadata = {
             title: $('title').text() || $('meta[property="og:title"]').attr('content') || '',
             description: $('meta[name="description"]').attr('content') || '',
@@ -44,9 +43,14 @@ module.exports = async function (req, res) {
                 h1: $('h1').map((i, el) => $(el).text().trim()).get(),
                 h2: $('h2').map((i, el) => $(el).text().trim()).get()
             },
-            links: $('a').length,
-            images: $('img').length,
-            tables: $('table').length,
+            links: $('a[href]').map((i, el) => ({
+                text: $(el).text().trim(),
+                href: $(el).attr('href')
+            })).get().slice(0, 50),
+            images: $('img').map((i, el) => ({
+                src: $(el).attr('src'),
+                alt: $(el).attr('alt') || ''
+            })).get().slice(0, 20),
             canonical: $('link[rel="canonical"]').attr('href') || ''
         };
 
@@ -54,8 +58,7 @@ module.exports = async function (req, res) {
 
         if (mode === 'rag') {
             $('script, style, nav, footer, header, svg, iframe').remove();
-            // Convert tables to markdown cleanly
-            response.clean_markdown = turndownService.turndown($.html());
+            response.clean_markdown = turndownService.turndown($.html()).substring(0, 15000);
         }
 
         await browser.close();
